@@ -146,7 +146,7 @@ This pipeline relies on several bioinformatics tools and Python libraries.
 * `numpy`: For numerical operations, especially in quality calculations (mean, median, N50).
 * `whatshap` (Python library): Underlying library used by WhatsHap tool.
 
-## Usage -test run-
+## Usage
 
 1.  **Clone the Repository:**
     ```bash
@@ -155,7 +155,7 @@ This pipeline relies on several bioinformatics tools and Python libraries.
     ```
 2.  **Configure `run.sh`:** Edit `run.sh` to set `RUNID`, `BASEDIR`, `WORKDIR`, `REFERENCE`, `HAPCUT2_PATH`, and `SCRIPT_PATH` according to your environment.   
 
-3.  **Install Dependencies:** Ensure all external tools (`samtools`, `WhatsHap`, `HapCUT2`, `bgzip`, `tabix`) are installed and accessible. Install Python libraries (`pysam`, `pandas`, `numpy`, `whatshap`) using `pip` or your preferred package manager. Install ckair3 docker. 
+3.  **Install Dependencies:** Ensure all external tools (`samtools`, `WhatsHap`, `HapCUT2`, `bgzip`, `tabix`) are installed and accessible. Install Python libraries (`pysam`, `pandas`, `numpy`, `whatshap`) using `pip` or your preferred package manager. Install clair3 docker. 
 
 4.  **Run the Pipeline:**
     ```bash
