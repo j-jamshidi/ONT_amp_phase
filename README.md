@@ -170,4 +170,4 @@ This project is licensed under the MIT License.
 
 ## Contact
 
-For questions or issues, please open an issue on the GitHub repository.
+For questions or issues, please contact j.jamshidi@neura.edu.au.
