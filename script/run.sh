@@ -7,17 +7,17 @@
 # Configuration and Setup
 #===============================================================================
 RUNID=$1
-
-#Change "/path/to/directory" to your working directory
-BASEDIR="/path/to/directory/ONT/Runs/${RUNID}"
-
+# Working directory.
+# Change "/path/to/" to your working directory (the path to the downloaded repository folder)
+BASEDIR="/path/to/ONT_amp_phase/Runs/${RUNID}"
 WORKDIR="${BASEDIR}/result"
 
-# Reference and tool paths. Change as required
-REFERENCE="/path/to/reference/directory/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
-#CLAIR3_PATH="/EBSDataDrive/ONT/Clair3" OR use docker (in the current setting)
+# Reference and tool paths.
+# Change /path/to/ as appropriate.
+REFERENCE="/path/to/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
+#CLAIR3_PATH="/path/to/Clair3" OR use docker (the current setting)
 HAPCUT2_PATH="/path/to/HapCUT2/build"
-SCRIPT_PATH="/path/to/directory/ONT/script"
+SCRIPT_PATH="/path/to/ONT_amp_phase/script"
 #===============================================================================
 # Functions
 #===============================================================================
@@ -205,6 +205,7 @@ process_samples() {
                     "${WORKDIR}/${Barcode}/${Episode}.bam" \
                     "${WORKDIR}/${Barcode}/${Episode}_coordinate.bed"
             else
+                export REFERENCE_FASTA="${REFERENCE}"
                 python "${SCRIPT_PATH}/basecalling_phasing_amplicon.py" \
                     "${WORKDIR}/${Barcode}/${Episode}.bam" \
                     "${WORKDIR}/${Barcode}/${Episode}.vcf"

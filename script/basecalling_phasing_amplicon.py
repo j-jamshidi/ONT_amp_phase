@@ -11,8 +11,11 @@ import sys
 from typing import Optional, Tuple, List
 from pathlib import Path
 
-#Change the path to your own reference file
-REFERENCE_FASTA = "/Users/javadjamshidi/Desktop/Refs/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna"
+# Reference FASTA path is now read from environment variable (set in run.sh)
+REFERENCE_FASTA = os.environ.get("REFERENCE_FASTA")
+if not REFERENCE_FASTA:
+    print("Error: REFERENCE_FASTA environment variable not set. Please set it before running the script.")
+    sys.exit(1)
 
 def compare_variants(dummy_vcf: str, variant_calling_vcf: str) -> List[Tuple[str, int, str, str]]:
 
