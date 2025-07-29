@@ -89,8 +89,11 @@ test,20,NA24385_3,chr1:100000000-100020000,chr1:100010000 A>G,
 
 **Installation:**
 ```bash
-# Install via conda (recommended)
-conda install -c bioconda samtools whatshap hapcut2 tabix
+# Install via conda 
+conda install -c bioconda samtools whatshap tabix
+
+# Install HapCUT2 from its GitHub repository
+https://github.com/vibansal/HapCUT2
 
 # Install Clair3 Docker
 docker pull hkubal/clair3:latest
