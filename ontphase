@@ -1,0 +1,599 @@
+#!/bin/bash
+set -uo pipefail  # Exit on undefined vars and pipe failures, but NOT on errors
+
+# ONT Amplicon Analysis Pipeline - Containerized Version
+# Author: Javad Jamshidi
+# Version: 2.0
+# Description: Processes barcoded amplicon sequences for variant calling, localisation and phasing
+
+# Usage and validation
+usage() {
+    cat << EOF
+Usage: $0 -i|--input <INPUT_DIR> -o|--output <OUTPUT_DIR> -r|--ref <REFERENCE> [OPTIONS]
+
+Description:
+    ONT Amplicon Analysis Pipeline for variant calling, localisation and phasing
+    
+Required Arguments:
+    -i, --input     Input directory containing sample_sheet.csv and bam_pass/ subdirectory
+    -o, --output    Output directory for results
+    -r, --ref       Path to reference genome FASTA file
+    
+Optional Arguments:
+    -h, --help      Show this help message
+    
+Requirements:
+    - Docker installed and running
+    - sample_sheet.csv in input directory
+    - BAM files in INPUT_DIR/bam_pass/barcodeXX/
+    
+Example:
+    $0 -i /path/to/run_data -o /path/to/results -r /path/to/reference.fna
+EOF
+}
+
+# Initialize variables
+BASEDIR=""
+WORKDIR=""
+REFERENCE=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -i|--input)
+            BASEDIR="$2"
+            shift 2
+            ;;
+        -o|--output)
+            WORKDIR="$2"
+            shift 2
+            ;;
+        -r|--ref)
+            REFERENCE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option $1" >&2
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [[ -z "$BASEDIR" ]] || [[ -z "$WORKDIR" ]] || [[ -z "$REFERENCE" ]]; then
+    echo "Error: Missing required arguments" >&2
+    usage
+    exit 1
+fi
+
+# Extract run ID from input directory name
+RUNID=$(basename "$BASEDIR")
+
+# Validate required paths
+if [[ ! -d "$BASEDIR" ]]; then
+    echo "Error: Base directory does not exist: $BASEDIR" >&2
+    exit 1
+fi
+
+if [[ ! -f "$REFERENCE" ]]; then
+    echo "Error: Reference genome not found: $REFERENCE" >&2
+    exit 1
+fi
+
+if ! compgen -G "${BASEDIR}/*sample_sheet.csv" > /dev/null; then
+    echo "Error: sample_sheet.csv not found in $BASEDIR" >&2
+    exit 1
+fi
+
+# Functions
+
+# Check Docker availability
+check_docker() {
+    if ! command -v docker &> /dev/null; then
+        error_exit "Docker is not installed or not in PATH"
+    fi
+    
+    if ! docker info &> /dev/null; then
+        error_exit "Docker daemon is not running"
+    fi
+}
+
+# Check and pull required Docker images if not present
+pull_docker_images() {
+    log "Checking required Docker images..."
+    
+    local images=("hkubal/clair3:latest" "javadj/ontampip:latest")
+    
+    for image in "${images[@]}"; do
+        if ! docker image inspect "$image" >/dev/null 2>&1; then
+            log "Pulling $image..."
+            if ! docker pull "$image"; then
+                error_exit "Failed to pull Docker image: $image"
+            fi
+        else
+            log "Image $image already available locally"
+        fi
+    done
+    
+    log "Docker images ready!"
+}
+
+# Logging function with levels
+log() {
+    local level="${2:-INFO}"
+    echo -e "$(date '+%Y-%m-%d %H:%M:%S') [$level] - $1"
+}
+
+log_error() {
+    log "$1" "ERROR" >&2
+}
+
+log_warn() {
+    log "$1" "WARN"
+}
+
+# Error handling
+error_exit() {
+    log_error "$1"
+    exit 1
+}
+
+# Sample-level error handling - logs error and returns 1 to continue pipeline
+sample_error() {
+    local barcode=$1
+    local episode=$2
+    local error_msg=$3
+    log_error "Sample ${barcode}/${episode} failed: ${error_msg}"
+    return 1
+}
+
+# Cleanup function
+cleanup() {
+    log "Pipeline interrupted. Cleaning up..."
+    # Add any cleanup operations here
+    exit 1
+}
+
+# Set up signal handlers
+trap cleanup SIGINT SIGTERM
+
+# Prepare VCF file
+prepare_vcf() {
+    local episode=$1
+    local barcode=$2
+    local variant1=$3
+    local variant2=$4
+
+    docker run --rm -v "${WORKDIR}:/data" --entrypoint cp javadj/ontampip:latest /app/dummy.vcf "/data/${barcode}/${episode}.vcf"
+    sed -i -e "s/sample/${episode}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+
+    # Process first variant
+    variant1=$(echo "${variant1}" | tr ':>\t ' '-' | sed 's/--*/-/g')
+    IFS='-' read -r -a array1 <<< "${variant1}"
+    sed -i -e "s/chrA/${array1[0]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    sed -i -e "s/POS1/${array1[1]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    sed -i -e "s/REF1/${array1[2]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    sed -i -e "s/ALT1/${array1[3]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    unset array1
+
+    if [[ "$variant2" =~ chr ]]; then
+        # Process second variant
+        variant2=$(echo "${variant2}" | tr ':>\t ' '-' | sed 's/--*/-/g')
+        IFS='-' read -r -a array2 <<< "${variant2}"
+        sed -i -e "s/chrB/${array2[0]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i -e "s/POS2/${array2[1]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i -e "s/REF2/${array2[2]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i -e "s/ALT2/${array2[3]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        unset array2
+
+        # Sort VCF file
+        grep -v "^#" "${WORKDIR}/${barcode}/${episode}.vcf" | sort -k1,1 -k2,2n > "${WORKDIR}/${barcode}/${episode}_sorted.vcf"
+        grep "^#" "${WORKDIR}/${barcode}/${episode}.vcf" > "${WORKDIR}/${barcode}/${episode}_header.vcf"
+        cat "${WORKDIR}/${barcode}/${episode}_header.vcf" "${WORKDIR}/${barcode}/${episode}_sorted.vcf" > "${WORKDIR}/${barcode}/${episode}.vcf"
+        rm "${WORKDIR}/${barcode}/${episode}_header.vcf" "${WORKDIR}/${barcode}/${episode}_sorted.vcf"
+    else
+        # Remove second variant line for single variant case
+        sed -i '/chrB/d' "${WORKDIR}/${barcode}/${episode}.vcf"
+    fi
+}
+
+# Merge BAM files
+merge_bam_files() {
+    local barcode=$1
+    local episode=$2
+    local coordinate=$3
+
+    log "Merging BAM files for ${barcode}, sample ${episode}..."
+    
+    # Check if BAM files exist
+    if [[ ! -d "${BASEDIR}/bam_pass/${barcode}" ]] || [[ -z "$(ls -A "${BASEDIR}/bam_pass/${barcode}"/*.bam 2>/dev/null)" ]]; then
+        sample_error "$barcode" "$episode" "No BAM files found in ${BASEDIR}/bam_pass/${barcode}/"
+        return 1
+    fi
+    
+    # Merge, sort, and extract region
+    if ! docker run --rm -v "${BASEDIR}:/input" -v "${WORKDIR}:/output" --entrypoint sh javadj/ontampip:latest \
+        -c "samtools merge -@ 6 -u - /input/bam_pass/${barcode}/*.bam | samtools sort -@ 6 -o /output/${barcode}/temp.bam"; then
+        sample_error "$barcode" "$episode" "Failed to merge BAM files for ${barcode}"
+        return 1
+    fi
+    
+    docker run --rm -v "${WORKDIR}:/output" --entrypoint samtools javadj/ontampip:latest \
+        index /output/${barcode}/temp.bam || { sample_error "$barcode" "$episode" "Failed to index temp BAM"; return 1; }
+    
+    docker run --rm -v "${WORKDIR}:/output" --entrypoint samtools javadj/ontampip:latest \
+        view -@ 6 -b /output/${barcode}/temp.bam "${coordinate}" -o /output/${barcode}/${episode}.bam || { sample_error "$barcode" "$episode" "Failed to extract region"; return 1; }
+    
+    docker run --rm -v "${WORKDIR}:/output" --entrypoint samtools javadj/ontampip:latest \
+        index /output/${barcode}/${episode}.bam || { sample_error "$barcode" "$episode" "Failed to index final BAM"; return 1; }
+    
+    rm "${WORKDIR}/${barcode}/temp"* 2>/dev/null || true
+    log "BAM files merged successfully!"
+}
+
+# Run Clair3 for variant calling
+run_clair3() {
+    local barcode=$1
+    local episode=$2
+
+        log "Running variant calling with Clair3 for ${barcode}, sample ${episode}..."
+                docker run --rm --platform linux/amd64 \
+        -v "${WORKDIR}:/data" \
+        -v "$(dirname "${REFERENCE}"):/refs" \
+        hkubal/clair3:latest \
+        /opt/bin/run_clair3.sh \
+        --bam_fn="/data/${barcode}/${episode}.bam" \
+        --bed_fn="/data/${barcode}/${episode}_coordinate.bed" \
+        --ref_fn="/refs/$(basename "${REFERENCE}")" \
+        --threads=6 \
+        --platform=ont \
+        --model_path="/opt/models/r1041_e82_400bps_sup_v500" \
+        --sample_name="${episode}" \
+        --use_whatshap_for_final_output_phasing \
+        --enable_phasing \
+        --remove_intermediate_dir \
+        --var_pct_full=1 \
+        --ref_pct_full=1 \
+        --var_pct_phasing=1 \
+        --output="/data/${barcode}/variant_calling_output" \
+        --min_coverage=20 >/dev/null 2>&1
+            log "Clair3 analysis finished!"
+}
+
+# Run WhatsHap for phasing
+run_whatshap() {
+    local barcode=$1
+    local episode=$2
+
+    log "Running WhatsHap for ${barcode}, ${episode}..."
+    
+    # Define file paths
+    local clean_span_bam="${WORKDIR}/${barcode}/clean-span-hq.bam"
+    local vcf_file="${WORKDIR}/${barcode}/${episode}.vcf"
+    local output_bam="${WORKDIR}/${barcode}/${episode}_phased.bam"
+    local phased_vcf="${WORKDIR}/${barcode}/${episode}_Phased.vcf"
+    local phased_vcf_gz="${phased_vcf}.gz"
+    local whatshap_log="${WORKDIR}/${barcode}/whatshap.log"
+
+    # Check if clean-span-hq.bam exists (created by Python QC step)
+    if [[ ! -f "${clean_span_bam}" ]]; then
+        log "Error: ${clean_span_bam} not found. Skipping WhatsHap."
+        return 1
+    fi
+
+    # Index the input BAM file
+    docker run --rm -v "${WORKDIR}:/data" --entrypoint samtools javadj/ontampip:latest \
+        index "/data/${barcode}/clean-span-hq.bam" 2>"${whatshap_log}"
+
+    # Run WhatsHap phase using Docker
+    if docker run --rm \
+        -v "${WORKDIR}:/data" \
+        -v "$(dirname "${REFERENCE}"):/refs" \
+        --entrypoint whatshap javadj/ontampip:latest \
+        phase -o "/data/${barcode}/${episode}_Phased.vcf" \
+        --reference "/refs/$(basename "${REFERENCE}")" \
+        --internal-downsampling 23 \
+        --ignore-read-groups \
+        "/data/${barcode}/${episode}.vcf" \
+        "/data/${barcode}/clean-span-hq.bam" >>"${whatshap_log}" 2>&1; then
+        
+        # Compress and index the phased VCF only if phase succeeded
+        if [[ -f "${phased_vcf}" ]]; then
+            docker run --rm -v "${WORKDIR}:/data" --entrypoint bgzip javadj/ontampip:latest \
+                -f "/data/${barcode}/${episode}_Phased.vcf"
+            docker run --rm -v "${WORKDIR}:/data" --entrypoint tabix javadj/ontampip:latest \
+                -p vcf "/data/${barcode}/${episode}_Phased.vcf.gz"
+
+            # Run WhatsHap haplotag using Docker
+            if docker run --rm \
+                -v "${WORKDIR}:/data" \
+                -v "$(dirname "${REFERENCE}"):/refs" \
+                --entrypoint whatshap javadj/ontampip:latest \
+                haplotag --tag-supplementary \
+                -o "/data/${barcode}/${episode}_phased.bam" \
+                --reference "/refs/$(basename "${REFERENCE}")" \
+                "/data/${barcode}/${episode}_Phased.vcf.gz" \
+                "/data/${barcode}/clean-span-hq.bam" \
+                --ignore-read-groups >>"${whatshap_log}" 2>&1; then
+                
+                # Index the output BAM only if haplotag succeeded
+                docker run --rm -v "${WORKDIR}:/data" --entrypoint samtools javadj/ontampip:latest \
+                    index "/data/${barcode}/${episode}_phased.bam"
+                log "WhatsHap analysis finished!"
+            else
+                log "WhatsHap haplotag failed. Check ${whatshap_log} for details."
+                return 1
+            fi
+        else
+            log "WhatsHap phase failed to create output VCF. Check ${whatshap_log} for details."
+            return 1
+        fi
+    else
+        log "WhatsHap phase failed. Check ${whatshap_log} for details."
+        return 1
+    fi
+}
+
+# Run HapCUT2 for phasing
+run_hapcut2() {
+    local barcode=$1
+    local episode=$2
+
+    log "Running HapCUT2 for ${barcode}, ${episode}..."
+    docker run --rm \
+        -v "${WORKDIR}:/data" \
+        -v "$(dirname "${REFERENCE}"):/refs" \
+        --entrypoint extractHAIRS javadj/ontampip:latest \
+        --ont 1 \
+        --bam "/data/${barcode}/${episode}.bam" \
+        --VCF "/data/${barcode}/${episode}.vcf" \
+        --out "/data/${barcode}/fragment_${episode}" \
+        --indels 1 \
+        --ref "/refs/$(basename "${REFERENCE}")" > "${WORKDIR}/${barcode}/HapCUT2.log" 2>&1
+
+    docker run --rm \
+        -v "${WORKDIR}:/data" \
+        --entrypoint HAPCUT2 javadj/ontampip:latest \
+        --fragments "/data/${barcode}/fragment_${episode}" \
+        --VCF "/data/${barcode}/${episode}.vcf" \
+        --output "/data/${barcode}/hap2cut_${episode}" >> "${WORKDIR}/${barcode}/HapCUT2.log" 2>&1
+    log "HapCUT2 analysis finished!"
+}
+
+# Add variant information to report header
+add_variant_info_to_report() {
+    local barcode=$1
+    local episode=$2
+    local variant1=$3
+    local variant2=$4
+    local report_file="${WORKDIR}/${barcode}/${episode}_report.txt"
+    
+    # Extract positions for distance calculation (handles both > and : as separators)
+    local pos1=$(echo "$variant1" | sed 's/ //g' | sed -E 's/^[^:]+:([0-9]+).*/\1/')
+    local pos2=$(echo "$variant2" | sed 's/ //g' | sed -E 's/^[^:]+:([0-9]+).*/\1/')
+    local distance=$((${pos2:-0} - ${pos1:-0}))
+    distance=${distance#-}
+    
+    
+    # Create temporary file with variant info
+    local temp_file="${WORKDIR}/${barcode}/temp_variant_info.txt"
+    
+    # Find the line with "Amplicon length:" and add variant info after it
+    if [[ -f "$report_file" ]]; then
+        awk -v var1="$variant1" -v var2="$variant2" -v dist="$distance" '
+        /^Amplicon length:/ {
+            print $0
+            print "Variant 1: " var1
+            print "Variant 2: " var2
+            print "Distance between variants: " dist " bp"
+            next
+        }
+        { print }
+        ' "$report_file" > "$temp_file"
+        
+        mv "$temp_file" "$report_file"
+    fi
+}
+
+
+
+# Prepare input file
+prepare_input_file() {
+    # Remove header from CSV file and create info file
+    cat "${BASEDIR}"/*sample_sheet.csv | tail -n +2 > "${BASEDIR}/temp.info"
+
+    # Process the Barcode column to add leading zeros and 'barcode' prefix
+    # Convert Episode to uppercase
+    awk -F',' 'BEGIN {OFS=","} {
+        gsub(/[[:space:]]*$/, "", $0)
+        if ($2 ~ /^[0-9]+$/) {
+            $2 = sprintf("barcode%02d", $2)
+        }
+        $3 = toupper($3)
+        print $0
+    }' "${BASEDIR}/temp.info" > "${BASEDIR}/${RUNID}.info"
+
+    # Ensure there's exactly one newline at the end of the file
+    sed -i -e '$a\' "${BASEDIR}/${RUNID}.info"
+
+    # Clean up temporary file
+    rm "${BASEDIR}/temp.info"
+}
+
+# Main processing loop
+process_samples() {
+    while IFS=, read -r Batch Barcode Episode Coordinate Variant1 Variant2 remainder; do
+        {
+            log "Processing ${Barcode}..."
+            mkdir -p "${WORKDIR}/${Barcode}"
+            
+            # Set up logging for this sample
+            exec > >(tee -a "${WORKDIR}/${Barcode}/pipeline.log") 2>&1
+
+            # Clean up Coordinate by removing trailing spaces
+            Coordinate=$(echo "${Coordinate}" | sed 's/[[:space:]]*$//')
+
+            # VCF File Preparation
+            if [[ ! "$Variant1" =~ chr ]]; then
+                log "No variant is provided, continuing with variant calling and QC..."
+            elif [[ ! "$Variant2" =~ chr ]]; then
+                log "One variant is provided, continuing with variant calling, QC, and localisation..."
+                prepare_vcf "$Episode" "$Barcode" "$Variant1" ""
+            else
+                log "Two variants are provided, continuing with variant calling, QC, and phasing..."
+                prepare_vcf "$Episode" "$Barcode" "$Variant1" "$Variant2"
+            fi
+
+            # BAM File Processing
+            if ! merge_bam_files "$Barcode" "$Episode" "$Coordinate"; then
+                log_warn "Skipping ${Barcode}/${Episode} due to BAM processing failure"
+                continue
+            fi
+
+            # Making coordinate bed file
+            echo -e "${Coordinate}" | tr -d ' ' | tr ':' '\t' | sed 's/-/\t/g' > "${WORKDIR}/${Barcode}/${Episode}_coordinate.bed"
+
+            # Variant Calling with Clair3
+            current_dir=$PWD
+            cd "${WORKDIR}/${Barcode}" || { sample_error "$Barcode" "$Episode" "Failed to change to sample directory"; continue; }
+            if ! run_clair3 "$Barcode" "$Episode"; then
+                log_warn "Skipping ${Barcode}/${Episode} due to Clair3 failure"
+                continue
+            fi
+
+            # Copy output files
+            if [[ ! -f "${WORKDIR}/${Barcode}/variant_calling_output/merge_output.vcf.gz" ]]; then
+                log_warn "Skipping ${Barcode}/${Episode} - Clair3 output file not found"
+                continue
+            fi
+            cp "${WORKDIR}/${Barcode}/variant_calling_output/merge_output.vcf.gz" "${Episode}.wf_snp.vcf.gz"
+            cp "${WORKDIR}/${Barcode}/variant_calling_output/merge_output.vcf.gz.tbi" "${Episode}.wf_snp.vcf.gz.tbi"
+
+            # Final Analysis and Cleanup
+            log "Analyzing the reads and writing the results for ${Barcode}, ${Episode}..."
+            if [[ ! "$Variant1" =~ chr ]] || [[ ! "$Variant2" =~ chr ]]; then
+                if ! docker run --rm -v "${WORKDIR}:/data" javadj/ontampip:latest localise_amplicon.py \
+                    "/data/${Barcode}/${Episode}.bam" \
+                    "/data/${Barcode}/${Episode}_coordinate.bed"; then
+                    log_warn "Skipping ${Barcode}/${Episode} due to localisation analysis failure"
+                    continue
+                fi
+            else
+                # Run Quality Control first to create clean-span-hq.bam
+                cd "$current_dir" || { sample_error "$Barcode" "$Episode" "Failed to return to original directory"; continue; }
+                if ! docker run --rm -v "${WORKDIR}:/data" javadj/ontampip:latest phasing_variants_qc.py \
+                    "/data/${Barcode}/${Episode}.bam" \
+                    "/data/${Barcode}/${Episode}.vcf"; then
+                    log_warn "Skipping ${Barcode}/${Episode} due to QC failure"
+                    continue
+                fi
+                
+                # Run variant comparison
+                if [[ -f "${WORKDIR}/${Barcode}/${Episode}.vcf" ]] && [[ -f "${WORKDIR}/${Barcode}/${Episode}.wf_snp.vcf.gz" ]]; then
+                    if ! docker run --rm -v "${WORKDIR}:/data" javadj/ontampip:latest variant_comparison.py \
+                        "/data/${Barcode}/${Episode}.vcf" \
+                        "/data/${Barcode}/${Episode}.wf_snp.vcf.gz" \
+                        "/data/${Barcode}/${Episode}_report.txt"; then
+                        log_warn "Warning: Variant comparison failed for ${Barcode}/${Episode}, continuing"
+                    fi
+                fi
+                
+                # Then run WhatsHap and HapCUT2 Phasing (only for two variants)
+                if ! run_whatshap "$Barcode" "$Episode"; then
+                    log_warn "Skipping ${Barcode}/${Episode} due to WhatsHap failure"
+                    continue
+                fi
+                
+                if ! run_hapcut2 "$Barcode" "$Episode"; then
+                    log_warn "Skipping ${Barcode}/${Episode} due to HapCUT2 failure"
+                    continue
+                fi
+                
+                # Finally run the remaining analysis
+                if ! docker run --rm -v "${WORKDIR}:/data" javadj/ontampip:latest phase_amplicon.py \
+                    "/data/${Barcode}/${Episode}.bam" \
+                    "/data/${Barcode}/${Episode}.vcf"; then
+                    log_warn "Skipping ${Barcode}/${Episode} due to phasing analysis failure"
+                    continue
+                fi
+                
+                # Add variant information to report header
+                if ! add_variant_info_to_report "$Barcode" "$Episode" "$Variant1" "$Variant2"; then
+                    log_warn "Warning: Failed to add variant info to report for ${Barcode}/${Episode}, continuing"
+                fi
+            fi
+
+            # Cleanup temporary files
+            rm -rf "${WORKDIR}/${Barcode}/work"
+            if [[ "$Variant1" =~ chr ]] && [[ "$Variant2" =~ chr ]]; then
+                rm "${WORKDIR}/${Barcode}/${Episode}.vcf"
+                rm "${WORKDIR}/${Barcode}/hap2cut_${Episode}"
+                rm "${WORKDIR}/${Barcode}/fragment_${Episode}"
+                rm "${WORKDIR}/${Barcode}/clean-span-hq.bam"*
+            fi
+            
+            log "Processing completed for ${Barcode}/${Episode}\n"
+            
+            # Reset logging
+            exec > /dev/tty 2>&1
+        }
+    done < "${BASEDIR}/${RUNID}.info"
+}
+
+# Main execution
+main() {
+    log "Starting ONT Amplicon Analysis Pipeline v2.0"
+    log "Run ID: $RUNID"
+    log "Base directory: $BASEDIR"
+    log "Work directory: $WORKDIR"
+    
+    # Pre-flight checks
+    check_docker
+    pull_docker_images
+    
+    # Create work directory
+    mkdir -p "$WORKDIR" || error_exit "Failed to create work directory: $WORKDIR"
+    
+    # Process pipeline
+    prepare_input_file
+    process_samples
+    
+    log "Pipeline execution completed!"
+    log "Results available in: $WORKDIR"
+    
+    # Summary of results
+    log "=== PIPELINE SUMMARY ==="
+    local total_samples=$(wc -l < "${BASEDIR}/${RUNID}.info")
+    local successful_samples=0
+    local failed_samples=0
+    
+    # Check each sample for completion
+    while IFS=, read -r Batch Barcode Episode _; do
+        if [[ -f "${WORKDIR}/${Barcode}/${Episode}_report.txt" ]]; then
+            # Check if pipeline.log contains any failure messages
+            if [[ -f "${WORKDIR}/${Barcode}/pipeline.log" ]] && grep -q "Skipping\|failed\|ERROR" "${WORKDIR}/${Barcode}/pipeline.log"; then
+                ((failed_samples++))
+            else
+                ((successful_samples++))
+            fi
+        else
+            ((failed_samples++))
+        fi
+    done < "${BASEDIR}/${RUNID}.info"
+    
+    log "Total samples processed: ${total_samples}"
+    log "Successful samples: ${successful_samples}"
+    log "Failed samples: ${failed_samples}"
+    
+    if [[ $failed_samples -gt 0 ]]; then
+        log_warn "Some samples failed. Check individual sample logs in ${WORKDIR}/*/pipeline.log"
+    fi
+}
+
+# Run main function
+main "$@"

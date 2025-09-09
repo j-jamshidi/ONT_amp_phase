@@ -1,0 +1,42 @@
+FROM python:3.9-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    samtools \
+    tabix \
+    wget \
+    curl \
+    unzip \
+    build-essential \
+    libhts-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install pysam numpy awscli
+
+# Install WhatsHap
+RUN pip install whatshap
+
+# Install HapCUT2
+WORKDIR /tmp
+RUN wget https://github.com/vibansal/HapCUT2/archive/master.zip && \
+    unzip master.zip && \
+    cd HapCUT2-master && \
+    make && \
+    cp build/extractHAIRS build/HAPCUT2 /usr/local/bin/ && \
+    cd / && rm -rf /tmp/HapCUT2-master /tmp/master.zip
+
+# Copy all scripts and templates
+COPY *.py /app/
+COPY dummy.vcf /app/
+COPY solo_LR.xml /app/
+COPY solo_LR_SR.xml /app/
+
+# Set working directory
+WORKDIR /app
+
+# Make scripts executable
+RUN chmod +x *.py
+
+# Default entrypoint
+ENTRYPOINT ["python"]
