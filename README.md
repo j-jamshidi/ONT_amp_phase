@@ -7,13 +7,12 @@ This repository contains a bioinformatics pipeline designed for analyzing barcod
 ## Table of Contents
 - [Introduction](#introduction)
 - [How it Works](#how-it-works)
-    - [Configuration and Setup](#configuration-and-setup)
     - [Input Data](#input-data)
     - [Pipeline Steps](#pipeline-steps)
 - [Output Files](#output-files)
 - [Dependencies](#dependencies)
 - [Usage](#usage)
-- [Scripts Overview](#scripts-overview)
+- [Test Run](#test-run)
 - [License](#license)
 - [Contact](#contact)
 
