@@ -111,6 +111,10 @@ For each processed sample, the following output files are generated within `OUTP
 
 This pipeline is **fully containerized** using Docker, requiring minimal local dependencies.
 
+**Platform Compatibility:**
+* Tested on Linux and macOS (including Apple Silicon M-series chips)
+* Requires Docker Desktop or Docker Engine
+
 **Docker Images Used:**
 * **`hkubal/clair3:latest`**: Official Clair3 container for variant calling.
 * **`javadj/ontampip:latest`**: Comprehensive pipeline container containing:
