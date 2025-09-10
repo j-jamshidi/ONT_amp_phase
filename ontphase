@@ -3,7 +3,7 @@ set -uo pipefail  # Exit on undefined vars and pipe failures, but NOT on errors
 
 # ONT Amplicon Analysis Pipeline - Containerized Version
 # Author: Javad Jamshidi
-# Version: 2.0
+# Version: 1.0.0
 # Description: Processes barcoded amplicon sequences for variant calling, localisation and phasing
 
 # Usage and validation
@@ -70,6 +70,14 @@ if [[ -z "$BASEDIR" ]] || [[ -z "$WORKDIR" ]] || [[ -z "$REFERENCE" ]]; then
     usage
     exit 1
 fi
+
+# Convert relative paths to absolute paths for Docker compatibility
+BASEDIR=$(realpath "$BASEDIR")
+WORKDIR=$(realpath "$WORKDIR" 2>/dev/null || echo "$(pwd)/$(dirname "$WORKDIR")/$(basename "$WORKDIR")")
+REFERENCE=$(realpath "$REFERENCE")
+
+# Create output directory if it doesn't exist
+mkdir -p "$WORKDIR"
 
 # Extract run ID from input directory name
 RUNID=$(basename "$BASEDIR")
@@ -170,25 +178,53 @@ prepare_vcf() {
     local variant2=$4
 
     docker run --rm -v "${WORKDIR}:/data" --entrypoint cp javadj/ontampip:latest /app/dummy.vcf "/data/${barcode}/${episode}.vcf"
-    sed -i -e "s/sample/${episode}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    
+    # Use cross-platform sed approach
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS sed
+        sed -i '' "s/sample/${episode}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    else
+        # Linux sed
+        sed -i "s/sample/${episode}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    fi
 
     # Process first variant
     variant1=$(echo "${variant1}" | tr ':>\t ' '-' | sed 's/--*/-/g')
     IFS='-' read -r -a array1 <<< "${variant1}"
-    sed -i -e "s/chrA/${array1[0]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
-    sed -i -e "s/POS1/${array1[1]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
-    sed -i -e "s/REF1/${array1[2]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
-    sed -i -e "s/ALT1/${array1[3]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS sed
+        sed -i '' "s/chrA/${array1[0]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i '' "s/POS1/${array1[1]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i '' "s/REF1/${array1[2]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i '' "s/ALT1/${array1[3]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    else
+        # Linux sed
+        sed -i "s/chrA/${array1[0]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i "s/POS1/${array1[1]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i "s/REF1/${array1[2]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        sed -i "s/ALT1/${array1[3]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+    fi
     unset array1
 
     if [[ "$variant2" =~ chr ]]; then
         # Process second variant
         variant2=$(echo "${variant2}" | tr ':>\t ' '-' | sed 's/--*/-/g')
         IFS='-' read -r -a array2 <<< "${variant2}"
-        sed -i -e "s/chrB/${array2[0]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
-        sed -i -e "s/POS2/${array2[1]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
-        sed -i -e "s/REF2/${array2[2]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
-        sed -i -e "s/ALT2/${array2[3]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        
+        if [[ "$(uname)" == "Darwin" ]]; then
+            # macOS sed
+            sed -i '' "s/chrB/${array2[0]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+            sed -i '' "s/POS2/${array2[1]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+            sed -i '' "s/REF2/${array2[2]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+            sed -i '' "s/ALT2/${array2[3]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        else
+            # Linux sed
+            sed -i "s/chrB/${array2[0]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+            sed -i "s/POS2/${array2[1]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+            sed -i "s/REF2/${array2[2]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+            sed -i "s/ALT2/${array2[3]:-}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
+        fi
         unset array2
 
         # Sort VCF file
@@ -198,7 +234,13 @@ prepare_vcf() {
         rm "${WORKDIR}/${barcode}/${episode}_header.vcf" "${WORKDIR}/${barcode}/${episode}_sorted.vcf"
     else
         # Remove second variant line for single variant case
-        sed -i '/chrB/d' "${WORKDIR}/${barcode}/${episode}.vcf"
+        if [[ "$(uname)" == "Darwin" ]]; then
+            # macOS sed
+            sed -i '' '/chrB/d' "${WORKDIR}/${barcode}/${episode}.vcf"
+        else
+            # Linux sed
+            sed -i '/chrB/d' "${WORKDIR}/${barcode}/${episode}.vcf"
+        fi
     fi
 }
 
@@ -339,32 +381,6 @@ run_whatshap() {
     fi
 }
 
-# Run HapCUT2 for phasing
-run_hapcut2() {
-    local barcode=$1
-    local episode=$2
-
-    log "Running HapCUT2 for ${barcode}, ${episode}..."
-    docker run --rm \
-        -v "${WORKDIR}:/data" \
-        -v "$(dirname "${REFERENCE}"):/refs" \
-        --entrypoint extractHAIRS javadj/ontampip:latest \
-        --ont 1 \
-        --bam "/data/${barcode}/${episode}.bam" \
-        --VCF "/data/${barcode}/${episode}.vcf" \
-        --out "/data/${barcode}/fragment_${episode}" \
-        --indels 1 \
-        --ref "/refs/$(basename "${REFERENCE}")" > "${WORKDIR}/${barcode}/HapCUT2.log" 2>&1
-
-    docker run --rm \
-        -v "${WORKDIR}:/data" \
-        --entrypoint HAPCUT2 javadj/ontampip:latest \
-        --fragments "/data/${barcode}/fragment_${episode}" \
-        --VCF "/data/${barcode}/${episode}.vcf" \
-        --output "/data/${barcode}/hap2cut_${episode}" >> "${WORKDIR}/${barcode}/HapCUT2.log" 2>&1
-    log "HapCUT2 analysis finished!"
-}
-
 # Add variant information to report header
 add_variant_info_to_report() {
     local barcode=$1
@@ -400,6 +416,34 @@ add_variant_info_to_report() {
     fi
 }
 
+# Run HapCUT2 for phasing
+run_hapcut2() {
+    local barcode=$1
+    local episode=$2
+
+    log "Running HapCUT2 for ${barcode}, ${episode}..."
+    docker run --rm \
+        -v "${WORKDIR}:/data" \
+        -v "$(dirname "${REFERENCE}"):/refs" \
+        --entrypoint extractHAIRS javadj/ontampip:latest \
+        --ont 1 \
+        --bam "/data/${barcode}/${episode}.bam" \
+        --VCF "/data/${barcode}/${episode}.vcf" \
+        --out "/data/${barcode}/fragment_${episode}" \
+        --indels 1 \
+        --ref "/refs/$(basename "${REFERENCE}")" > "${WORKDIR}/${barcode}/HapCUT2.log" 2>&1
+
+    docker run --rm \
+        -v "${WORKDIR}:/data" \
+        --entrypoint HAPCUT2 javadj/ontampip:latest \
+        --fragments "/data/${barcode}/fragment_${episode}" \
+        --VCF "/data/${barcode}/${episode}.vcf" \
+        --output "/data/${barcode}/hap2cut_${episode}" >> "${WORKDIR}/${barcode}/HapCUT2.log" 2>&1
+    log "HapCUT2 analysis finished!"
+}
+
+
+
 
 
 # Prepare input file
@@ -419,7 +463,13 @@ prepare_input_file() {
     }' "${BASEDIR}/temp.info" > "${BASEDIR}/${RUNID}.info"
 
     # Ensure there's exactly one newline at the end of the file
-    sed -i -e '$a\' "${BASEDIR}/${RUNID}.info"
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS sed
+        sed -i '' -e '$a\' "${BASEDIR}/${RUNID}.info"
+    else
+        # Linux sed
+        sed -i -e '$a\' "${BASEDIR}/${RUNID}.info"
+    fi
 
     # Clean up temporary file
     rm "${BASEDIR}/temp.info"
@@ -526,6 +576,8 @@ process_samples() {
                 if ! add_variant_info_to_report "$Barcode" "$Episode" "$Variant1" "$Variant2"; then
                     log_warn "Warning: Failed to add variant info to report for ${Barcode}/${Episode}, continuing"
                 fi
+                
+
             fi
 
             # Cleanup temporary files
@@ -547,10 +599,10 @@ process_samples() {
 
 # Main execution
 main() {
-    log "Starting ONT Amplicon Analysis Pipeline v2.0"
+    log "Starting ONT Amplicon Analysis Pipeline v1.0.0"
     log "Run ID: $RUNID"
-    log "Base directory: $BASEDIR"
-    log "Work directory: $WORKDIR"
+    log "Input directory: $BASEDIR"
+    log "Output directory: $WORKDIR"
     
     # Pre-flight checks
     check_docker
