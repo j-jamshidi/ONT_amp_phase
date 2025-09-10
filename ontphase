@@ -209,10 +209,9 @@ prepare_vcf() {
     unset array1
 
     if [[ "$variant2" =~ chr ]]; then
-        # Process second variant - handle multiple delimiters
-        # First normalize multiple spaces/tabs to single space, then split on various delimiters
-        variant2=$(echo "${variant2}" | sed 's/[[:space:]]\+/ /g' | tr ':> ' '\t\t\t')
-        IFS=$'\t' read -r -a array2 <<< "${variant2}"
+        # Process second variant
+        variant2=$(echo "${variant2}" | tr ':>\t ' '-' | sed 's/--*/-/g')
+        IFS='-' read -r -a array2 <<< "${variant2}"
         
         if [[ "$(uname)" == "Darwin" ]]; then
             # macOS sed
@@ -391,9 +390,9 @@ add_variant_info_to_report() {
     local variant2=$4
     local report_file="${WORKDIR}/${barcode}/${episode}_report.txt"
     
-    # Extract positions for distance calculation (handles both > and : as separators)
-    local pos1=$(echo "$variant1" | sed 's/ //g' | sed -E 's/^[^:]+:([0-9]+).*/\1/')
-    local pos2=$(echo "$variant2" | sed 's/ //g' | sed -E 's/^[^:]+:([0-9]+).*/\1/')
+    # Extract positions for distance calculation (handles multiple delimiters: space, tab, colon, >)
+    local pos1=$(echo "$variant1" | sed -E 's/[[:space:]]+/ /g' | sed -E 's/^[^[:space:]:]+[[:space:]:]+([0-9]+).*/\1/')
+    local pos2=$(echo "$variant2" | sed -E 's/[[:space:]]+/ /g' | sed -E 's/^[^[:space:]:]+[[:space:]:]+([0-9]+).*/\1/')
     local distance=$((${pos2:-0} - ${pos1:-0}))
     distance=${distance#-}
     
