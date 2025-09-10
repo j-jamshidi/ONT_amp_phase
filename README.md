@@ -1,4 +1,4 @@
-# ONT Amplicon Phasing Pipeline
+# ONT Amplicon Analysis Pipeline
 
 This repository contains a bioinformatics pipeline designed for analyzing barcoded amplicon sequences generated from Oxford Nanopore Technology (ONT) data. The pipeline is capable of performing quality control, variant calling, and haplotype phasing, specifically tailored for two main purposes:
 1. Single-variant localization and quality control.
