@@ -131,8 +131,8 @@ This pipeline is **fully containerized** using Docker, requiring minimal local d
 
 2.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/j-jamshidi/ONT_amplicon_phase.git
-    cd ONT_amplicon_phase
+    git clone https://github.com/j-jamshidi/ONT_amp_phase.git
+    cd ONT_amp_phase
     ```
 
 3.  **Make the script executable:**
