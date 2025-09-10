@@ -188,9 +188,10 @@ prepare_vcf() {
         sed -i "s/sample/${episode}/g" "${WORKDIR}/${barcode}/${episode}.vcf"
     fi
 
-    # Process first variant
-    variant1=$(echo "${variant1}" | tr ':>\t ' '-' | sed 's/--*/-/g')
-    IFS='-' read -r -a array1 <<< "${variant1}"
+    # Process first variant - handle multiple delimiters
+    # First normalize multiple spaces/tabs to single space, then split on various delimiters
+    variant1=$(echo "${variant1}" | sed 's/[[:space:]]\+/ /g' | tr ':> ' '\t\t\t')
+    IFS=$'\t' read -r -a array1 <<< "${variant1}"
     
     if [[ "$(uname)" == "Darwin" ]]; then
         # macOS sed
@@ -208,9 +209,10 @@ prepare_vcf() {
     unset array1
 
     if [[ "$variant2" =~ chr ]]; then
-        # Process second variant
-        variant2=$(echo "${variant2}" | tr ':>\t ' '-' | sed 's/--*/-/g')
-        IFS='-' read -r -a array2 <<< "${variant2}"
+        # Process second variant - handle multiple delimiters
+        # First normalize multiple spaces/tabs to single space, then split on various delimiters
+        variant2=$(echo "${variant2}" | sed 's/[[:space:]]\+/ /g' | tr ':> ' '\t\t\t')
+        IFS=$'\t' read -r -a array2 <<< "${variant2}"
         
         if [[ "$(uname)" == "Darwin" ]]; then
             # macOS sed
