@@ -96,7 +96,7 @@ For each processed sample, the following output files are generated within `OUTP
 * **`${Episode}_coordinate.bed`**: BED file with the amplicon coordinates.
 * **`${Episode}.wf_snp.vcf.gz`**: GZipped VCF with Clair3 variant calls.
 * **`${Episode}.wf_snp.vcf.gz.tbi`**: Tabix index for the Clair3 VCF.
-* **`${Episode}_report.txt`**: Main report with QC metrics, variant comparison, and (if two variants) phasing results. See [Report Guide](report_guide.md) for detailed explanation of report contents.
+* **`${Episode}_report.txt`**: Main report with QC metrics, variant comparison, and (if two variants) phasing results. See [Report Guide](REPORT_GUIDE.md) for detailed explanation of report contents.
 * **`${Episode}_phased.bam`**: WhatsHap-phased BAM (if two variants).
 * **`${Episode}_phased.bam.bai`**: Index for phased BAM.
 * **`${Episode}_Phased.vcf.gz`**: WhatsHap-phased VCF (if two variants).
