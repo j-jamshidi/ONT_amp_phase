@@ -44,42 +44,61 @@ User provided variant:
 chr4    41638861    C    T
 
 Variants called from the amplicon by Clair3:
-chr4    41638861    C    T
+chr4    41638861    C    T <-
 chr4    41651881    G    A
 
 Variant Matching:
 Variant 1: chr4 41638861 C > T - FOUND
 ```
+**Clair3 Variant Table:**
+- **CHROM**: Chromosome
+- **POS**: Position on chromosome
+- **REF**: Reference allele
+- **ALT**: Alternate allele
+- **QUAL**: Variant quality score (higher = more confident)
+- **GT**: Genotype (0/1 = heterozygous, 0/0 = homozygous reference, 1/1 = homozygous alternate)
+- **← Arrow**: Indicates user-specified variants found by Clair3
+
+**Variant Matching Results:**
+- **FOUND**: User variant matches a Clair3-called variant
+- **NOT FOUND**: User variant not detected by Clair3 (may indicate low coverage or sequencing issues)
+
 
 ### Quality Control Details
 ```
 ==Quality control details==
 Depth Statistics:
-Median depth: 127X
-Minimum depth: 89X
-Maximum depth: 156X
+Median depth: X
+Minimum depth: X
+Maximum depth: X
 
 Read Length Distribution:
-Median length: 14,203
-Mean length: 14,156
-Length N50: 14,298
+Median length: 
+Mean length: 
+Length N50: 
 
 Mapping Quality:
-Mean MAPQ: 60
-Reads with MAPQ≥20: 1,247 (100%)
+Mean MAPQ: 
+Reads with MAPQ≥20: 
 
 Base Quality:
-Mean base quality: 12
-Median base quality: 12
+Mean base quality: 
+Median base quality: 
 
 Alignment Statistics:
-Mean identity: 95%
-Reads ≥80% identity: 1,247 (100%)
+Mean identity: 
+Reads ≥80% identity: 
 
 Strand Distribution:
-Forward: 623 (50%)
-Reverse: 624 (50%)
+Forward: 
+Reverse: 
 ```
+- **Depth Statistics**: Provides the median, minimum, and maximum sequencing depth across the target region, reflecting coverage uniformity and identifying potential dropouts.
+- **Read Length Distribution**: Reports the median and mean read lengths, as well as the N50 metric, offering insight into the size distribution and quality of sequencing fragments.
+- **Mapping Quality**: Summarizes the average mapping quality score and enumerates reads with MAPQ ≥ 20, indicating the reliability of read alignment to the reference genome.
+- **Base Quality**: Details the mean and median base quality scores, representing the confidence in individual base calls throughout the dataset.
+- **Alignment Statistics**: Presents the average alignment identity and the proportion of reads with ≥80% identity, assessing the accuracy of read-to-reference mapping.
+- **Strand Distribution**: Quantifies the coverage contributed by reads mapped to the forward and reverse DNA strands, enabling evaluation of strand bias in the sequencing data.
 
 ---
 
@@ -239,10 +258,6 @@ HapCUT2 analysis determined the phase as Cis
 - Low yield PCR, repeat the PCR
 - Check amplicon coordinates match PCR design
 
-**"Variant validation failed"**
-- Verify variant coordinates and alleles
-- Check if variants are actually heterozygous in sample
-
 **"Skewed allele frequencies"**
 - May indicate allele dropout or contamination
 - Consider technical replicates
@@ -252,6 +267,10 @@ HapCUT2 analysis determined the phase as Cis
 - Consider optimizing PCR conditions
 
 ### Error Conditions
+
+**"Variant validation failed"**
+- Verify variant coordinates and alleles
+- Check if variants are actually heterozygous in sample
 
 **"Insufficient coverage at position"**
 - Variant position not adequately covered
