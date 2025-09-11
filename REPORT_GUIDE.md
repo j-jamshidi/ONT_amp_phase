@@ -25,6 +25,13 @@ Passing QC reads: xx (xx%)
 
 *QC PASSED (>50 HQ reads and minimum depth >50x)*
 ```
+- **Report for**: Sample identifier from the `Episode` column in sample sheet
+- **Amplicon region**: Genomic coordinates of the target amplicon (chromosome:start-end)
+- **Amplicon length**: Size of the target region in base pairs
+- **Total reads**: All reads in amplicon region
+- **Passing QC reads**: Reads passing quality control (>1000 bp, MAPQ ≥ 20, base quality ≥ 10)
+- **QC PASSED**: Indicates whether the sample passed the quality control criteria
+
 
 **QC Status Criteria:**
 - **PASSED**: >50 high-quality reads AND minimum depth >50x
@@ -88,6 +95,11 @@ Variant 1: chr21:42375588 G>A
 Variant 2: chr21:42388818 A>G
 Distance between variants: 13230 bp
 ```
+- **Report for**: Sample identifier from the `Episode` column in sample sheet
+- **Amplicon region**: Genomic coordinates of the target amplicon (chromosome:start-end)
+- **Amplicon length**: Size of the target region in base pairs
+- **Variant 1/2**: User-specified variants in format `chromosome:position reference>alternate`
+- **Distance between variants**: Physical distance between the two variants on the genome
 
 ### Variant Validation
 ```
@@ -116,6 +128,11 @@ High quality spanning reads (MAPQ >= 20): 834 (97.43% of clean spanning reads)
 - **Clean spanning reads**: Spanning reads where both variants can be confidently called
 - **High quality spanning reads**: Clean spanning reads with MAPQ ≥ 20
 
+**Pass/Fail Criteria:**
+- **PASS**: ≥50 high quality spanning reads
+- **FAIL**: <50 high quality spanning reads (insufficient data for reliable phasing)
+
+
 ### Variant Calling Section
 ```
 ===Variant Calling===
@@ -130,9 +147,18 @@ Variant 1: chr4 41638861 C > T - FOUND
 Variant 2: chr4 41651881 G > A - FOUND
 ```
 
-**Indicators:**
-- `<-` : Variant matches user-provided variant
-- ` ` : Variant not in user-provided list
+**Clair3 Variant Table:**
+- **CHROM**: Chromosome
+- **POS**: Position on chromosome
+- **REF**: Reference allele
+- **ALT**: Alternate allele
+- **QUAL**: Variant quality score (higher = more confident)
+- **GT**: Genotype (0/1 = heterozygous, 0/0 = homozygous reference, 1/1 = homozygous alternate)
+- **← Arrow**: Indicates user-specified variants found by Clair3
+
+**Variant Matching Results:**
+- **FOUND**: User variant matches a Clair3-called variant
+- **NOT FOUND**: User variant not detected by Clair3 (may indicate low coverage or sequencing issues)
 
 
 ### Phasing Results
@@ -160,6 +186,28 @@ WhatsHap analysis determined the phase as Cis
 
 HapCUT2 analysis determined the phase as Cis
 ```
+#### Read Categorization
+**Cis Configuration** 
+1. **Both Reference (Ref-Ref)**: 
+   - Both variants show reference allele on same DNA molecule
+2. **Both Alternate (Alt-Alt)**: 
+   - Both variants show alternate allele on same DNA molecule
+
+**Trans Configuration** (Different Chromosomes)
+1. **Ref-Alt**: 
+   - First variant = reference, second variant = alternate
+2. **Alt-Ref**:
+   - First variant = alternate, second variant = reference
+
+#### Phase Configuration Summary Statistics
+- **Total Cis**: variants on same chromosome
+- **Total Trans**: variants on different chromosomes
+
+#### Chimeric Reads
+- **Definition**: Reads showing a discordant phase (i.e., not matching the main phase configuration)
+- **Interpretation**: 
+   - Acceptable percentage (≤40%): Within expected range for technical noise
+   - High percentage (>40%): Warning—may indicate technical issues or unreliable phasing results
 
 ---
 
